@@ -1,0 +1,1 @@
+{"arch": "arch.mlp_set5f", "session_dir": null, "data": "data_r12_trinity_v0", "argv": ["crossval.py", "--arch", "arch.mlp_set5f"]}
