@@ -121,7 +121,7 @@ def _get_general_eigen_vals(all_backbone_params, idx_low=0, idx_high=3, num_eige
     num_layers = 0
     for backbone_params in all_backbone_params:
         if len(backbone_params.shape) >= 2:
-            if num_layers >= idx_low and num_layers <= idx_high:
+            if (num_layers >= idx_low and num_layers <= idx_high) or (backbone_params.shape[0] == 2):
                 reshaped_params = backbone_params.reshape(backbone_params.shape[1], -1)
                 _, singular_values, _ = np.linalg.svd(reshaped_params, False)
                 squared_singular_values = singular_values**2
@@ -130,6 +130,10 @@ def _get_general_eigen_vals(all_backbone_params, idx_low=0, idx_high=3, num_eige
                     #features += squared_singular_values.tolist()
                     features += top_five_sq_sv.tolist()
                     num_layers += 1
+                elif squared_singular_values.shape[0] == 2:
+                    top_five_sq_sv = squared_singular_values[:num_eigen_values]
+                    # features += squared_singular_values.tolist()
+                    features += top_five_sq_sv.tolist()
             #num_layers += 1
     #print(num_layers)
     return features
