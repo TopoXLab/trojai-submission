@@ -1,4 +1,3 @@
-This repo contains a the code for TrinitySRITrojAI submission to the cyber-pdf-dec2022 round of the [TrojAI leaderboard](https://pages.nist.gov/trojai/). 
 
 # Dependencies
 
@@ -12,12 +11,6 @@ pip install scikit-learn
 ```
 
 # Usage
-
-Clone code into `<root>/trojai-cyber-pdf`
-
-Download and extract training set `cyber-pdf-dec2022-train.tar.gz` into `<root>/trojai-datasets/cyber-pdf-dec2022-train`
-
-`cd` into `<root>/trojai-cyber-pdf` and run the following commands
 
 First run feature extraction on the training set.
 
