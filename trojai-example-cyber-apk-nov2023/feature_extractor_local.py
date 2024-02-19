@@ -275,8 +275,6 @@ if __name__ == "__main__":
     model_A_features, model_A_labels = all_features_and_labels['model_A_features'], all_features_and_labels['model_A_labels']
     #model_B_features, model_B_labels = all_features_and_labels['model_B_features'], all_features_and_labels['model_B_labels']
 
-    # model_A_features = model_A_features.repeat(repeats=5, axis=0)
-    # model_A_labels = model_A_labels.repeat(repeats=5)
     np.save('features_A', model_A_features)
     #np.save('features_B', model_B_features)
     np.save('labels_A', model_A_labels)
