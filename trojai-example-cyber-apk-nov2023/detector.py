@@ -131,7 +131,7 @@ class Detector(AbstractDetector):
         # get hyperparameters
         args = {}
         args['low_layer'] = 0
-        args['high_layer'] = 2
+        args['high_layer'] = 0
         args['num_eigen_values'] = 100
 
         # List all available model
@@ -311,7 +311,7 @@ class Detector(AbstractDetector):
         # get hyperparameters
         args = {}
         args['low_layer'] = 0
-        args['high_layer'] = 2
+        args['high_layer'] = 0
         args['num_eigen_values'] = 100
 
         # predict_model_class_and_features = fe.get_model_features(args, model_filepath)
