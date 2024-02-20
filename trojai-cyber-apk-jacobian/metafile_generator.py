@@ -1,8 +1,9 @@
 import torch
 
 #Github link
-url='https://github.com/frkl/trojai-cyber-pdf'
+url='https://github.com/luluppang/trojai-submission'
 #commit id
+sha = '17fc0265821ade8190ed0ba6ccf5a16fc2c6fe36'
 
 import subprocess
 import re
@@ -55,22 +56,26 @@ for cfg in hp_config:
     template[cfg[0]]=template_k
 
 
-meta_schema={"$schema": "http://json-schema.org/draft-07/schema#","title": "SRI Trinity Framework",
-"technique": "Trigger search + utilization analysis","technique_description": "Enumerate training examples and analyze their Jacobians.","technique_changes": "First commit. Focusing on generality and compliance.","commit_id": sha,"repo_name": url,"required": [],"additionalProperties": False,"type": "object"}
+meta_schema={"$schema": "http://json-schema.org/draft-07/schema#","title": "SRI-SBU Trinity Framework",
+             "technique": "Trigger search + utilization analysis",
+             "technique_description": "Enumerate training examples and analyze their Jacobians.",
+             "technique_changes": "First commit. Focusing on generality and compliance.",
+             "technique_type": ["Weight Analysis"],
+             "commit_id": sha,"repo_name": url,"required": [],"additionalProperties": False,"type": "object"}
 meta_schema['properties']=template;
 
 #Generate metaparam file
-params=vars(tmp[0]['params'])
-params2={};
+params = vars(tmp[0]['params'])
+params2 = {};
 for cfg in hp_config:
-    k=cfg[0]
-    params2[k]=params[k]
+    k = cfg[0]
+    params2[k] = params[k]
 
 import json
-with open('metaparameters_schema.json','w') as f:
-    json.dump(meta_schema,f)
+with open('metaparameters_schema.json', 'w') as f:
+    json.dump(meta_schema, f)
 
-with open('metaparameters.json','w') as f:
-    json.dump(params2,f)
+with open('metaparameters.json', 'w') as f:
+    json.dump(params2, f)
 
 
