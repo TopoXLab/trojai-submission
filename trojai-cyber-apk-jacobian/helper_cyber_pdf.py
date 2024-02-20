@@ -43,15 +43,15 @@ class engine:
         default_params=smartparse.obj();
         default_params.model_filepath='';
         default_params.examples_dirpath='';
-        default_params.scale_parameters_filepath='';
+        #default_params.scale_parameters_filepath='';
         params=smartparse.merge(params,default_params)
         #print(vars(params))
         if params.model_filepath=='':
             params.model_filepath=os.path.join(folder,'model.pt');
         if params.examples_dirpath=='':
             params.examples_dirpath=os.path.join(folder,'clean-example-data');
-        if params.scale_parameters_filepath=='':
-            params.scale_parameters_filepath=os.path.join(root(),'scale_params.npy')
+        # if params.scale_parameters_filepath=='':
+        #     params.scale_parameters_filepath=os.path.join(root(),'scale_params.npy')
         
         
         #model=torch.load(params.model_filepath);
@@ -60,15 +60,15 @@ class engine:
         self.model.eval();
         
         self.examples_dirpath=params.examples_dirpath
-        self.scale_parameters_filepath=params.scale_parameters_filepath
+        #self.scale_parameters_filepath=params.scale_parameters_filepath
     
     
     def load_examples(self,examples_dirpath=None,scale_parameters_filepath=None):
         if examples_dirpath is None:
             examples_dirpath=self.examples_dirpath
         
-        if scale_parameters_filepath is None:
-            scale_parameters_filepath=self.scale_parameters_filepath
+        # if scale_parameters_filepath is None:
+        #     scale_parameters_filepath=self.scale_parameters_filepath
         
         scaler = StandardScaler()
         # scale_params = np.load(scale_parameters_filepath)
