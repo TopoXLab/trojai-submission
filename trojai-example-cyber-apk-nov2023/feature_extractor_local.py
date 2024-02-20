@@ -235,7 +235,7 @@ if __name__ == "__main__":
     # args = parser.parse_args()
     args = {}
     args['low_layer'] = 0
-    args['high_layer'] = 2
+    args['high_layer'] = 0
     args['num_eigen_values'] = 100
 
     models_dir_list = ["/scr2/lu/TrojAI23/rl-lavaworld-jul2023/training/models",
