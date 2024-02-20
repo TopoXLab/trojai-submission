@@ -5,7 +5,7 @@
   "technique_description": "Enumerate training examples and analyze weights.",
   "technique_changes": "First commit. Focusing on generality and compliance",
   "technique_type": ["Weight Analysis"],
-  "commit_id": "",
+  "commit_id": "17fc0265821ade8190ed0ba6ccf5a16fc2c6fe36",
   "repo_name": "https://github.com/luluppang/trojai-submission",
   "required": [],
   "additionalProperties": false,
