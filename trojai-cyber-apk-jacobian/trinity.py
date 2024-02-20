@@ -229,7 +229,7 @@ def predict(ensemble,fvs):
             params=ensemble[i]['params'];
             arch=importlib.import_module(params.arch);
             net=arch.new(params);
-            net.load_state_dict(ensemble[i]['net'],strict=True);
+            net.load_state_dict(ensemble[i]['net'], strict=True);
             net=net.cuda();
             net.eval();
 
