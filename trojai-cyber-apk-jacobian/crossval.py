@@ -220,14 +220,14 @@ def split(dataset,params=None):
 best_so_far=1e10
 def crossval_hyper(dataset,params):
     default_params=smartparse.obj();
-    default_params.arch='arch.mlp_set5d';
-    default_params.session_dir=None;
-    params=smartparse.merge(params,default_params)
+    default_params.arch = 'arch.mlp_set5f_weight';
+    default_params.session_dir = None;
+    params = smartparse.merge(params, default_params)
     
-    session=session_manager.create_session(params);
+    session = session_manager.create_session(params);
     
     #Produce crossval splits
-    crossval_splits=split(dataset,params);
+    crossval_splits = split(dataset, params);
     
     #Hyperparam search config
     hp_config=HP_config();
@@ -269,7 +269,7 @@ def crossval_hyper(dataset,params):
     
     #Launch HP search
     #best=fmin(run_crossval,hp_config.params(),algo=tpe.suggest,max_evals=100000);
-    best = fmin(run_crossval, hp_config.params(), algo=tpe.suggest, max_evals=100);
+    best = fmin(run_crossval, hp_config.params(), algo=tpe.suggest, max_evals=10);
 
 
 if __name__ == "__main__":
@@ -280,7 +280,7 @@ if __name__ == "__main__":
     params=smartparse.parse(default_params);
     params.argv=sys.argv;
     
-    dataset=[torch.load(os.path.join(params.data,fname)) for fname in os.listdir(params.data) if fname.endswith('.pt')];
+    dataset=[torch.load(os.path.join(params.data, fname)) for fname in os.listdir(params.data) if fname.endswith('.pt')];
     dataset=db.Table.from_rows(dataset)
     crossval_hyper(dataset,params)
     
