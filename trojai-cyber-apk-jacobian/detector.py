@@ -42,7 +42,7 @@ import crossval
 import helper_cyber_pdf as helper
 
 class Detector(AbstractDetector):
-    def __init__(self, metaparameter_filepath, learned_parameters_dirpath, scale_parameters_filepath):
+    def __init__(self, metaparameter_filepath, learned_parameters_dirpath):
         """Detector initialization function.
 
         Args:
@@ -51,9 +51,9 @@ class Detector(AbstractDetector):
             scale_parameters_filepath: str - File path to the scale_parameters file.
         """
         metaparameters = json.load(open(metaparameter_filepath, "r"))
-        self.params=smartparse.dict2obj(metaparameters)
+        self.params = smartparse.dict2obj(metaparameters)
         
-        self.scale_parameters_filepath = scale_parameters_filepath
+        #self.scale_parameters_filepath = scale_parameters_filepath
         self.metaparameter_filepath = metaparameter_filepath
         self.learned_parameters_dirpath = learned_parameters_dirpath
         
@@ -82,39 +82,39 @@ class Detector(AbstractDetector):
     
     #Retraining logic
     def automatic_configure(self, models_dirpath: str):
-        dataset=trinity.extract_dataset(models_dirpath,ts_engine=trinity.ts_engine,params=self.params)
-        splits=crossval.split(dataset,self.params)
-        ensemble=crossval.train(splits,self.params)
-        torch.save(ensemble,os.path.join(self.learned_parameters_dirpath,'model.pt'))
+        dataset = trinity.extract_dataset(models_dirpath, ts_engine=trinity.ts_engine, params=self.params)
+        splits = crossval.split(dataset, self.params)
+        ensemble = crossval.train(splits, self.params)
+        torch.save(ensemble, os.path.join(self.learned_parameters_dirpath, 'model.pt'))
         return True
     
     def manual_configure(self, models_dirpath: str):
         return self.automatic_configure(models_dirpath)
     
-    def infer(self,model_filepath,result_filepath,scratch_dirpath,examples_dirpath,round_training_dataset_dirpath):
+    def infer(self, model_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath):
         #Instantiate interface
-        params=smartparse.obj()
-        params.model_filepath=model_filepath;
-        params.examples_dirpath=examples_dirpath;
-        params.scale_parameters_filepath=self.scale_parameters_filepath;
-        interface=helper.engine(params=params)
+        params = smartparse.obj()
+        params.model_filepath = model_filepath;
+        params.examples_dirpath = examples_dirpath;
+        #params.scale_parameters_filepath=self.scale_parameters_filepath;
+        interface = helper.engine(params=params)
         
         #Extract features
-        fvs=trinity.extract_fv(interface,trinity.ts_engine,self.params);
-        fvs=db.Table.from_rows([fvs]);
+        fvs = trinity.extract_fv(interface, trinity.ts_engine, self.params);
+        fvs = db.Table.from_rows([fvs]);
         
         #Load model
         if not self.learned_parameters_dirpath is None:
             try:
-                ensemble=torch.load(os.path.join(self.learned_parameters_dirpath,'model.pt'));
+                ensemble = torch.load(os.path.join(self.learned_parameters_dirpath, 'model.pt'));
             except:
-                ensemble=torch.load(os.path.join('/',self.learned_parameters_dirpath,'model.pt'));
+                ensemble = torch.load(os.path.join('/', self.learned_parameters_dirpath, 'model.pt'));
             
             #print(ensemble)
-            trojan_probability=trinity.predict(ensemble,fvs)
+            trojan_probability = trinity.predict(ensemble, fvs)
             
         else:
-            trojan_probability=0.5;
+            trojan_probability = 0.5;
         
         print(trojan_probability)
         
