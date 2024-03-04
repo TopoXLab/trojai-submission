@@ -8,31 +8,20 @@ import json
 import logging
 import os
 import pickle
-from os import listdir, makedirs
-from os.path import join, exists, basename
 from joblib import dump, load
 
 import numpy as np
-from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import accuracy_score
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.calibration import CalibratedClassifierCV
+import torch
+
 import feature_extractor_local as fe
 
-from tqdm import tqdm
-
 from utils.abstract import AbstractDetector
-from utils.flatten import flatten_model, flatten_models
-from utils.healthchecks import check_models_consistency
-from utils.models import create_layer_map, load_model, \
-    load_models_dirpath
-from utils.padding import create_models_padding, pad_model
-from utils.reduction import (
-    fit_feature_reduction_algorithm,
-    use_feature_reduction_algorithm,
-)
+from utils.models import load_model
 
-import torchvision
+
 
 class Detector(AbstractDetector):
     def __init__(self, metaparameter_filepath, learned_parameters_dirpath):
@@ -46,16 +35,7 @@ class Detector(AbstractDetector):
 
         self.metaparameter_filepath = metaparameter_filepath
         self.learned_parameters_dirpath = learned_parameters_dirpath
-        # self.model_filepath = join(self.learned_parameters_dirpath, "model.bin")
-        # self.models_padding_dict_filepath = join(self.learned_parameters_dirpath, "models_padding_dict.bin")
-        # self.model_layer_map_filepath = join(self.learned_parameters_dirpath, "model_layer_map.bin")
-        # self.layer_transform_filepath = join(self.learned_parameters_dirpath, "layer_transform.bin")
-        #
-        # # TODO: Update skew parameters per round
-        # self.model_skew = {
-        #     "__all__": metaparameters["infer_cyber_model_skew"],
-        # }
-        #
+
         # self.input_features = metaparameters["train_input_features"]
         # self.weight_table_params = {
         #     "random_seed": metaparameters["train_weight_table_random_state"],
@@ -92,7 +72,6 @@ class Detector(AbstractDetector):
 
     def write_metaparameters(self):
         metaparameters = {
-            "infer_cyber_model_skew": self.model_skew["__all__"],
             "train_input_features": self.input_features,
             "train_weight_table_random_state": self.weight_table_params["random_seed"],
             "train_weight_table_params_mean": self.weight_table_params["mean"],
@@ -108,7 +87,7 @@ class Detector(AbstractDetector):
             "train_random_forest_regressor_param_min_impurity_decrease": self.random_forest_kwargs["min_impurity_decrease"],
         }
 
-        with open(join(self.learned_parameters_dirpath, basename(self.metaparameter_filepath)), "w") as fp:
+        with open(os.path.join(self.learned_parameters_dirpath, os.path.basename(self.metaparameter_filepath)), "w") as fp:
             json.dump(metaparameters, fp)
 
     def automatic_configure(self, models_dirpath: str):
@@ -132,137 +111,134 @@ class Detector(AbstractDetector):
             models_dirpath: str - Path to the list of model to use for training
         """
         # Create the learned parameter folder if needed
-        if not exists(self.learned_parameters_dirpath):
-            makedirs(self.learned_parameters_dirpath)
+        os.makedirs(self.learned_parameters_dirpath, exist_ok=True)
+
+        # List all available model
+        model_path_list = sorted([os.path.join(models_dirpath, model) for model in os.listdir(models_dirpath)])
+        logging.info("Found {} models to configure the detector against".format(len(model_path_list)))
 
         # get hyperparameters
         args = {}
-        args['low_layer'] = 0
-        args['high_layer'] = 0
-        args['num_eigen_values'] = 100
+        args['low_layer_A'] = 0
+        args['high_layer_A'] = 0
+        args['low_layer_B'] = 0
+        args['high_layer_B'] = 0
+        args['num_eigen_values'] = 20
+        args['general'] = False
 
-        # List all available model
-        model_path_list = sorted([join(models_dirpath, model) for model in listdir(models_dirpath)])
-        logging.info(f"Loading %d models...", len(model_path_list))
+        if args['general']:
+            all_features_and_labels = fe.get_features_and_labels(args, model_path_list)
+        else:
+            all_features_and_labels = fe.get_features_and_labels_by_model_class(args, model_path_list)
 
-        # model_repr_dict, model_ground_truth_dict = load_models_dirpath(model_path_list)
-        #
-        # models_padding_dict = create_models_padding(model_repr_dict)
-        # with open(self.models_padding_dict_filepath, "wb") as fp:
-        #     pickle.dump(models_padding_dict, fp)
-        #
-        # for model_class, model_repr_list in model_repr_dict.items():
-        #     for index, model_repr in enumerate(model_repr_list):
-        #         model_repr_dict[model_class][index] = pad_model(model_repr, model_class, models_padding_dict)
-        #
-        # check_models_consistency(model_repr_dict)
-        #
-        # # Build model layer map to know how to flatten
-        # logging.info("Generating model layer map...")
-        # model_layer_map = create_layer_map(model_repr_dict)
-        # with open(self.model_layer_map_filepath, "wb") as fp:
-        #     pickle.dump(model_layer_map, fp)
-        # logging.info("Generated model layer map. Flattenning models...")
-        #
-        # # Flatten models
-        # flat_models = flatten_models(model_repr_dict, model_layer_map)
-        # del model_repr_dict
-        # logging.info("Models flattened. Fitting feature reduction...")
-        #
-        # layer_transform = fit_feature_reduction_algorithm(flat_models, self.weight_table_params, self.input_features)
-
-        all_features_and_labels = fe.get_features_and_labels(args, model_path_list)
         model_A_features, model_A_labels = all_features_and_labels['model_A_features'], all_features_and_labels[
             'model_A_labels']
-        # model_B_features, model_B_labels = all_features_and_labels['model_B_features'], all_features_and_labels[
-        #     'model_B_labels']
-
         np.save('features_A', model_A_features)
-        # np.save('features_B', model_B_features)
         np.save('labels_A', model_A_labels)
-        # np.save('labels_B', model_B_labels)
 
         base_clf = RandomForestClassifier(n_estimators=2000, max_depth=2, criterion='log_loss', bootstrap=True,
                                           random_state=0)
         clf_A, clf_B, clf_C = CalibratedClassifierCV(base_estimator=base_clf, cv=5), CalibratedClassifierCV(
             base_estimator=base_clf, cv=5), CalibratedClassifierCV(base_estimator=base_clf, cv=5)
         clf_A.fit(model_A_features, model_A_labels)
-        # clf_B.fit(model_B_features, model_B_labels)
-
         dump(clf_A, os.path.join(self.learned_parameters_dirpath, 'classifier_model_A.joblib'))
-        # dump(clf_B, os.path.join(self.learned_parameters_dirpath, 'classifier_model_B.joblib'))
 
-        # logging.info("Feature reduction applied. Creating feature file...")
-        # X = None
-        # y = []
+        if not args['general']:
+            model_B_features, model_B_labels = all_features_and_labels['model_B_features'], all_features_and_labels[
+                'model_B_labels']
+            np.save('features_B', model_B_features)
+            np.save('labels_B', model_B_labels)
+            clf_B.fit(model_B_features, model_B_labels)
+            dump(clf_B, os.path.join(self.learned_parameters_dirpath, 'classifier_model_B.joblib'))
+
+        # logging.info("Creating detector features")
+        # X = list()
+        # y = list()
         #
-        # for _ in range(len(flat_models)):
-        #     (model_arch, models) = flat_models.popitem()
-        #     model_index = 0
+        # for model_index in range(len(model_path_list)):
+        #     model_feats = np.random.randn(100)
         #
-        #     logging.info("Parsing %s models...", model_arch)
-        #     for _ in tqdm(range(len(models))):
-        #         model = models.pop(0)
-        #         y.append(model_ground_truth_dict[model_arch][model_index])
-        #         model_index += 1
+        #     X.append(model_feats)  # random features
+        #     y.append(float(np.random.rand() > 0.5))  # random label
         #
-        #         model_feats = use_feature_reduction_algorithm(
-        #             layer_transform[model_arch], model
-        #         )
-        #         if X is None:
-        #             X = model_feats
-        #             continue
-        #
-        #         X = np.vstack((X, model_feats * self.model_skew["__all__"]))
-        #
+        # X = np.stack(X, axis=0)
+        # y = np.asarray(y)
+
         # logging.info("Training RandomForestRegressor model...")
         # model = RandomForestRegressor(**self.random_forest_kwargs, random_state=0)
         # model.fit(X, y)
         #
         # logging.info("Saving RandomForestRegressor model...")
-        # with open(self.model_filepath, "wb") as fp:
+        # with open(os.path.join(self.learned_parameters_dirpath, 'model.bin'), "wb") as fp:
         #     pickle.dump(model, fp)
         #
         # self.write_metaparameters()
         logging.info("Configuration done!")
 
-    def inference_on_example_data(self, model, examples_dirpath):
+    def inference_on_example_data(self, model, tokenizer, torch_dtype=torch.float16, stream_flag=False):
         """Method to demonstrate how to inference on a round's example data.
 
         Args:
             model: the pytorch model
-            examples_dirpath: the directory path for the round example data
+            tokenizer: the models tokenizer
+            torch_dtype: the dtype to use for inference
+            stream_flag: flag controlling whether to put the whole model on the gpu (stream=False) or whether to park some of the weights on the CPU and stream the activations between CPU and GPU as required. Use stream=False unless you cannot fit the model into GPU memory.
         """
-        inputs_np = None
-        g_truths = []
 
-        for examples_dir_entry in os.scandir(examples_dirpath):
-            if examples_dir_entry.is_file() and examples_dir_entry.name.endswith(".png"):
-                base_example_name = os.path.splitext(examples_dir_entry.name)[0]
-                ground_truth_filename = os.path.join(examples_dirpath, '{}.json'.format(base_example_name))
-                if not os.path.exists(ground_truth_filename):
-                    logging.warning('ground truth file not found ({}) for example {}'.format(ground_truth_filename, base_example_name))
-                    continue
+        if stream_flag:
+            logging.info("Using accelerate.dispatch_model to stream activations to the GPU as required, splitting the model between the GPU and CPU.")
+            model.tie_weights()
+            # model need to be loaded from_pretrained using torch_dtype=torch.float16 to fast inference, but the model appears to be saved as fp32. How will this play with bfp16?
+            # You can't load as 'auto' and then specify torch.float16 later.
+            # In fact, if you load as torch.float16, the later dtype can be None, and it works right
 
-                new_input = torchvision.io.read_image(examples_dir_entry.path)
+            # The following functions are duplicated from accelerate.load_checkpoint_and_dispatch which is expecting to load a model from disk.
+            # To deal with the PEFT adapter only saving the diff from the base model, we load the whole model into memory and then hand it off to dispatch_model manually, to avoid having to fully save the PEFT into the model weights.
+            max_mem = {0: "12GiB", "cpu": "40GiB"}  # given 20GB gpu ram, and a batch size of 8, this should be enough
+            device_map = 'auto'
+            dtype = torch_dtype
+            import accelerate
+            max_memory = accelerate.utils.modeling.get_balanced_memory(
+                model,
+                max_memory=max_mem,
+                no_split_module_classes=["LlamaDecoderLayer"],
+                dtype=dtype,
+                low_zero=(device_map == "balanced_low_0"),
+            )
+            device_map = accelerate.infer_auto_device_map(
+                model, max_memory=max_memory, no_split_module_classes=["LlamaDecoderLayer"], dtype=dtype
+            )
 
-                if inputs_np is None:
-                    inputs_np = new_input
-                else:
-                    inputs_np = np.concatenate([inputs_np, new_input])
+            model = accelerate.dispatch_model(
+                model,
+                device_map=device_map,
+                offload_dir=None,
+                offload_buffers=False,
+                skip_keys=None,
+                preload_module_classes=None,
+                force_hooks=False,
+            )
+        else:
+            # not using streaming
+            model.cuda()
 
-                with open(ground_truth_filename) as f:
-                    data = int(json.load(f))
+        prompt = "As someone who uses quality Premium, I"
+        inputs = tokenizer([prompt], return_tensors='pt')
+        inputs = inputs.to('cuda')
 
-                g_truths.append(data)
+        outputs = model.generate(**inputs, max_new_tokens=200,
+                                 pad_token_id=tokenizer.eos_token_id,
+                                 top_p=1.0,
+                                 temperature=1.0,
+                                 no_repeat_ngram_size=3,
+                                 do_sample=False)
 
-        g_truths_np = np.asarray(g_truths)
+        results = tokenizer.batch_decode(outputs, skip_special_tokens=True)
+        result = results[0]  # unpack implicit batch
+        result = result.replace(prompt, '')
 
-        p = model.predict(inputs_np)
-        p = [1 if p > 0.5 else 0 for p in p[:, 1]]
-
-        orig_test_acc = accuracy_score(g_truths_np, p)
-        print("Model accuracy on example data {}: {}".format(examples_dirpath, orig_test_acc))
+        logging.info("Prompt: \n\"\"\"\n{}\n\"\"\"".format(prompt))
+        logging.info("Response: \n\"\"\"\n{}\n\"\"\"".format(result))
 
 
     def infer(
@@ -282,77 +258,54 @@ class Detector(AbstractDetector):
             examples_dirpath:
             round_training_dataset_dirpath:
         """
-
-        # with open(self.model_layer_map_filepath, "rb") as fp:
-        #     model_layer_map = pickle.load(fp)
-        #
-        # # List all available model and limit to the number provided
-        # model_path_list = sorted(
-        #     [
-        #         join(round_training_dataset_dirpath, 'models', model)
-        #         for model in listdir(join(round_training_dataset_dirpath, 'models'))
-        #     ]
-        # )
-        # logging.info(f"Loading %d models...", len(model_path_list))
-        #
-        # model_repr_dict, _ = load_models_dirpath(model_path_list)
-        # logging.info("Loaded models. Flattenning...")
-        #
-        # with open(self.models_padding_dict_filepath, "rb") as fp:
-        #     models_padding_dict = pickle.load(fp)
-        #
-        # for model_class, model_repr_list in model_repr_dict.items():
-        #     for index, model_repr in enumerate(model_repr_list):
-        #         model_repr_dict[model_class][index] = pad_model(model_repr, model_class, models_padding_dict)
-        #
-        # # Flatten model
-        # flat_models = flatten_models(model_repr_dict, model_layer_map)
-        # del model_repr_dict
-        # logging.info("Models flattened. Fitting feature reduction...")
-        #
-        # layer_transform = fit_feature_reduction_algorithm(flat_models, self.weight_table_params, self.input_features)
-        #
-        # model, model_repr, model_class = load_model(model_filepath)
-        # model_repr = pad_model(model_repr, model_class, models_padding_dict)
-        # flat_model = flatten_model(model_repr, model_layer_map[model_class])
-
         # get hyperparameters
         args = {}
-        args['low_layer'] = 0
-        args['high_layer'] = 0
-        args['num_eigen_values'] = 100
+        args['low_layer_A'] = 0
+        args['high_layer_A'] = 0
+        args['low_layer_B'] = 0
+        args['high_layer_B'] = 0
+        args['num_eigen_values'] = 20
+        args['general'] = False
 
         # predict_model_class_and_features = fe.get_model_features(args, model_filepath)
-        predict_model_class_and_features = fe.get_general_model_features(args, model_filepath)
+        if args['general']:
+            predict_model_class_and_features = fe.get_general_model_features(args, model_filepath)
+        else:
+            predict_model_class_and_features = fe.get_model_features(args, model_filepath)
+
         predict_model_class = predict_model_class_and_features['model_class']
         predict_model_features = np.asarray([predict_model_class_and_features['features']])
-        # if predict_model_class == 'FCModel':
-        #     clf = load('/learned_parameters/classifier_model_A.joblib')
-        #     probability = clf.predict_proba(predict_model_features)
-        # elif predict_model_class == 'CNNModel':
-        #     clf = load('/learned_parameters/classifier_model_B.joblib')
-        #     probability = clf.predict_proba(predict_model_features)
-        # else:
-        #     logging.warning('No able to detect such model class')
-        #     probability = [0.5, 0.5]
-        clf = load('/learned_parameters/classifier_model_A.joblib')
-        probability = clf.predict_proba(predict_model_features)
+        if not args['general']:
+            if predict_model_class == True:
+                clf = load('/learned_parameters/classifier_model_A.joblib')
+                probability = clf.predict_proba(predict_model_features)
+            elif predict_model_class == False:
+                clf = load('/learned_parameters/classifier_model_B.joblib')
+                probability = clf.predict_proba(predict_model_features)
+            else:
+                logging.warning('No able to detect such model class')
+                probability = [0.5, 0.5]
+        else:
+            clf = load('/learned_parameters/classifier_model_A.joblib')
+            probability = clf.predict_proba(predict_model_features)
         logging.info('Trojan Probability of this class {} model is: {}'.format(predict_model_class, probability))
 
+        # model, tokenizer = load_model(model_filepath)
+        #
         # # Inferences on examples to demonstrate how it is done for a round
         # # This is not needed for the random forest classifier
-        # self.inference_on_example_data(model, examples_dirpath)
-        #
-        # X = (
-        #     use_feature_reduction_algorithm(layer_transform[model_class], flat_model)
-        #     * self.model_skew["__all__"]
-        # )
+        # self.inference_on_example_data(model, tokenizer, torch_dtype=torch.float16, stream_flag=False)
         #
         # try:
-        #     with open(self.model_filepath, "rb") as fp:
+        #     # load "trojan" detection model
+        #     with open(os.path.join(self.learned_parameters_dirpath, 'model.bin'), "rb") as fp:
         #         regressor: RandomForestRegressor = pickle.load(fp)
         #
+        #     # create RNG "features" about the AI model to feed into the "trojan" detector forest
+        #     X = np.random.randn(1, 100)  # needs to be 2D, with the features in dim[-1]
+        #
         #     probability = str(regressor.predict(X)[0])
+        #     logging.info("Random forest regressor predicted correctly")
         # except Exception as e:
         #     logging.info('Failed to run regressor, there may have an issue during fitting, using random for trojan probability: {}'.format(e))
         #     probability = str(np.random.rand())
