@@ -13,7 +13,7 @@ from sklearn.metrics import roc_auc_score
 from utils.abstract import AbstractDetector
 from utils.flatten import flatten_model, flatten_models
 from utils.healthchecks import check_models_consistency
-from utils.models import create_layer_map, load_model, \
+from utils.models import create_layer_map, load_model, load_model_network, \
     load_models_dirpath
 from utils.padding import create_models_padding, pad_model
 from utils.reduction import (
@@ -103,10 +103,13 @@ def get_general_model_features(args, model_filepath):
         model = torch.load(model_filepath)
         model_class = model._get_name()
         model_backbone = model
+    elif 'cyber-network-c2-mar2024-train' in model_filepath:
+        model, model_repr, model_class = load_model_network(model_filepath)
+        model_backbone = model.model
     else:
         model, model_repr, model_class = load_model(model_filepath)
-        cnn_type = model.cnn_type
-        model_backbone = model.model
+        # cnn_type = model.cnn_type
+        model_backbone = model
         # num_of_params = sum(p.numel() for p in model_backbone.parameters()) / 1000.0
         # print(model_class, num_of_params)
 
@@ -124,8 +127,8 @@ def _get_general_eigen_vals(all_backbone_params, idx_low=0, idx_high=3, num_eige
     features = []
     num_layers = 0
     for backbone_params in all_backbone_params:
-        if len(backbone_params.shape) > 2:
-            if (num_layers >= idx_low and num_layers <= idx_high) or (backbone_params.shape[0] == 2):
+        if len(backbone_params.shape) >= 2:
+            if (num_layers >= idx_low and num_layers <= idx_high) or (backbone_params.shape[0] == 2) or (backbone_params.shape[0] == 5):
                 reshaped_params = backbone_params.reshape(backbone_params.shape[1], -1)
                 _, singular_values, _ = np.linalg.svd(reshaped_params, False)
                 squared_singular_values = singular_values**2
@@ -134,8 +137,8 @@ def _get_general_eigen_vals(all_backbone_params, idx_low=0, idx_high=3, num_eige
                     #features += squared_singular_values.tolist()
                     features += top_five_sq_sv.tolist()
                     num_layers += 1
-                elif squared_singular_values.shape[0] == 2:
-                    top_five_sq_sv = squared_singular_values[:num_eigen_values]
+                elif squared_singular_values.shape[0] == 2 or squared_singular_values.shape[0] == 5:
+                    top_five_sq_sv = squared_singular_values[:2]
                     # features += squared_singular_values.tolist()
                     features += top_five_sq_sv.tolist()
             #num_layers += 1
@@ -246,8 +249,8 @@ if __name__ == "__main__":
     args['high_layer_A'] = 0
     args['low_layer_B'] = 0
     args['high_layer_B'] = 0
-    args['num_eigen_values'] = 100
-    args['general'] = False
+    args['num_eigen_values'] = 50
+    args['general'] = True
 
     models_dir_list = ["/scr2/lu/TrojAI23/rl-lavaworld-jul2023/training/models",
                        "/scr2/lu/TrojAI23/rl-lavaworld-jul2023/leftovers/models",
@@ -259,6 +262,12 @@ if __name__ == "__main__":
     models_dir_list = ["/scr2/lu/TrojAI23/cyber-apk-nov2023-train/models",
                        "/scr2/lu/TrojAI23/cyber-apk-nov2023-train-rev2/models",]
     models_dir_list = ["/scr2/lu/TrojAI23/cyber-network-c2-mar2024-train-rev2/rev2/models",]
+    models_dir_list = ["/data2/lu/data/nist/cyber-network-c2-mar2024-train/rev2/models",
+                       "/data2/lu/data/nist/cyber-pe-aug2024-train/models", ]
+    models_dir_list = ["/data2/lu/data/nist/cyber-pe-aug2024-train-rev2/models",
+                       "/data2/lu/data/nist/cyber-pe-aug2024-train/models", ]
+
+    # models_dir_list = ["/data2/lu/data/nist/cyber-pe-aug2024-train/models", ]
     models_path_list = sorted(get_model_path_list(models_dir_list))
     # model_repr_dict, model_ground_truth_dict = load_models_dirpath(models_path_list)
     #

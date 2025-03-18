@@ -1,9 +1,9 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "SRI-SBU Trinity Framework.",
-  "technique": "Random Forest Regressor",
-  "technique_description": "Extracts model weights and trains a random forest regressor.",
-  "technique_changes": "Output metaparameter.json file after reconfiguration",
+  "technique": "Weight analysis based on eigen values",
+  "technique_description": "Extract eigen values and train a random forest classifier",
+  "technique_changes": "Initial Commit",
   "technique_type": ["Weight Analysis"],
   "commit_id": "17fc0265821ade8190ed0ba6ccf5a16fc2c6fe36",
   "repo_name": "https://github.com/luluppang/trojai-submission",

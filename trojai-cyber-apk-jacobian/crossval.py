@@ -269,7 +269,7 @@ def crossval_hyper(dataset,params):
     
     #Launch HP search
     #best=fmin(run_crossval,hp_config.params(),algo=tpe.suggest,max_evals=100000);
-    best = fmin(run_crossval, hp_config.params(), algo=tpe.suggest, max_evals=10);
+    best = fmin(run_crossval, hp_config.params(), algo=tpe.suggest, max_evals=100000);
 
 
 if __name__ == "__main__":

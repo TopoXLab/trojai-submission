@@ -1,25 +1,19 @@
 import torch
 import os, sys
 import numpy as np
+from joblib import dump, load
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.calibration import CalibratedClassifierCV
-from joblib import dump
-from utils.models import load_ground_truth
+
 import argparse
 import random
 from sklearn.metrics import roc_auc_score
 
 from utils.abstract import AbstractDetector
-from utils.flatten import flatten_model, flatten_models
-from utils.healthchecks import check_models_consistency
-from utils.models import create_layer_map, load_model, \
-    load_models_dirpath
-from utils.padding import create_models_padding, pad_model
-from utils.reduction import (
-    fit_feature_reduction_algorithm,
-    use_feature_reduction_algorithm,
-)
+from utils.models import load_ground_truth
+from search import inference_on_example_data
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 
 
 def get_features_and_labels_by_model_class(args, models_dirpath: str):
@@ -44,14 +38,14 @@ def get_features_and_labels_by_model_class(args, models_dirpath: str):
     for model_path in models_dirpath:
         if not os.path.isdir(model_path):
             continue
-        class_and_features_by_model = get_model_features(args, os.path.join(model_path, "model.pt"))
+        class_and_features_by_model = get_model_features(args, model_path)
         model_class, model_features = class_and_features_by_model['model_class'], class_and_features_by_model['features']
         model_ground_truth = load_ground_truth(model_path)
 
-        if model_class == 'ResNet18':
+        if model_class == True:      #### use_lora
             model_A_features.append(model_features)
             model_A_labels.append(model_ground_truth)
-        elif model_class == 'ResNet34':
+        elif model_class == False:          #### without using lora
             model_B_features.append(model_features)
             model_B_labels.append(model_ground_truth)
         else:
@@ -66,21 +60,22 @@ def get_features_and_labels(args, models_dirpath: str):
 
     model_A_features, model_B_features, model_C_features, model_A_labels, model_B_labels, model_C_labels = [], [], [], [], [], []
 
+    # models = []
     # model_names = []
     # model_dicts = []
     # for model_path in models_dirpath:
     #     if not os.path.isdir(model_path):
     #         continue
-    #     model, model_repr, model_class = load_model(os.path.join(model_path, "model.pt"))
+    #     model, tokenizer = load_model(model_path)
+    #     models.append(model)
     #     model_backbone = model.model
     #     model_name = model_backbone._get_name()
     #     model_names.append(model_name)
-    #     model_dicts.append(model_repr)
 
     for model_path in models_dirpath:
         if not os.path.isdir(model_path):
             continue
-        class_and_features_by_model = get_general_model_features(args, os.path.join(model_path, "model.pt"))
+        class_and_features_by_model = get_general_model_features(args, model_path)
         model_class, model_features = class_and_features_by_model['model_class'], class_and_features_by_model['features']
         model_ground_truth = load_ground_truth(model_path)
 
@@ -100,19 +95,24 @@ def get_features_and_labels(args, models_dirpath: str):
 
 def get_general_model_features(args, model_filepath):
     if 'cyber-pdf-dec2022-train' in model_filepath:
-        model = torch.load(model_filepath)
+        model = torch.load(os.path.join(model_filepath, "model.pt"))
         model_class = model._get_name()
         model_backbone = model
     else:
-        model, model_repr, model_class = load_model(model_filepath)
-        cnn_type = model.cnn_type
+        model, tokenizer, use_lora = load_model(model_filepath)
+        # model, model_repr, model_class = load_model(model_filepath)
+        # cnn_type = model.cnn_type
         model_backbone = model.model
+        #model_backbone = model.lm_head
+        model_class = model._get_name()
         # num_of_params = sum(p.numel() for p in model_backbone.parameters()) / 1000.0
         # print(model_class, num_of_params)
 
     all_backbone_params = []
     for param in model_backbone.parameters():
         all_backbone_params.append(param.data.cpu().numpy())
+    #all_backbone_params = all_backbone_params[1:]   ### remove embedding token layer
+    all_backbone_params.reverse()
 
     features = []
     features = _get_general_eigen_vals(all_backbone_params, args['low_layer_A'], args['high_layer_A'], args['num_eigen_values'])
@@ -124,10 +124,10 @@ def _get_general_eigen_vals(all_backbone_params, idx_low=0, idx_high=3, num_eige
     features = []
     num_layers = 0
     for backbone_params in all_backbone_params:
-        if len(backbone_params.shape) > 2:
-            if (num_layers >= idx_low and num_layers <= idx_high) or (backbone_params.shape[0] == 2):
+        if len(backbone_params.shape) >= 2:
+            if (num_layers >= idx_low and num_layers <= idx_high):
                 reshaped_params = backbone_params.reshape(backbone_params.shape[1], -1)
-                _, singular_values, _ = np.linalg.svd(reshaped_params, False)
+                _, singular_values, _ = np.linalg.svd(reshaped_params.astype(np.float32), False)
                 squared_singular_values = singular_values**2
                 if squared_singular_values.shape[0] >= num_eigen_values:
                     top_five_sq_sv = squared_singular_values[:num_eigen_values]
@@ -138,32 +138,51 @@ def _get_general_eigen_vals(all_backbone_params, idx_low=0, idx_high=3, num_eige
                     top_five_sq_sv = squared_singular_values[:num_eigen_values]
                     # features += squared_singular_values.tolist()
                     features += top_five_sq_sv.tolist()
-            #num_layers += 1
+                    # num_layers += 1
+                else:
+                    top_five_sq_sv = squared_singular_values[:num_eigen_values]
+                    # features += squared_singular_values.tolist()
+                    features += top_five_sq_sv.tolist()
+                    num_layers += 1
+            else:
+                num_layers += 1
     #print(num_layers)
     return features
 
 
 def get_model_features(args, model_filepath):
+    # model, tokenizer, use_lora = load_model(model_filepath)
+    # model_class = use_lora
+    torch_dtype = torch.bfloat16
+    # print(torch.__version__)
+    # import transformers
+    # print(transformers.__version__)
+    model = AutoModelForCausalLM.from_pretrained(model_filepath, trust_remote_code=True, low_cpu_mem_usage=True,
+                                                 torch_dtype=torch_dtype)
+    tokenizer = AutoTokenizer.from_pretrained(model_filepath)
 
-    model, model_repr, model_class = load_model(model_filepath)
-    cnn_type = model.cnn_type
-    model_class = cnn_type
-    model_backbone = model.model
+    probability = inference_on_example_data(model, tokenizer, '', '')
+    if model_class:
+        model_backbone = model.lm_head
+    else:
+        model_backbone = model.model
 
     all_backbone_params = []
     for param in model_backbone.parameters():
         all_backbone_params.append(param.data.cpu().numpy())
+    all_backbone_params = all_backbone_params[1:]  ### remove embedding token layer
+    if not model_class:
+        all_backbone_params.reverse()
 
     features = []
 
-    if model_class == 'ResNet18':
+    if model_class == True:
         # features = _get_eigen_vals_fc(all_backbone_params, args['low_layer'], args['high_layer'])
         features = _get_eigen_vals(all_backbone_params, args['low_layer_A'], args['high_layer_A'])
-    elif model_class == 'ResNet34':
+    elif model_class == False:
         features = _get_eigen_vals(all_backbone_params, args['low_layer_B'], args['high_layer_B'])
     else:
         print(model_class, " is an unknown model!!!!!!")
-
     return {'model_class': model_class, 'features': features}
 
 
@@ -174,7 +193,7 @@ def _get_eigen_vals(all_backbone_params, idx_low=0, idx_high=3):
         if len(backbone_params.shape) > 2:
             if num_layers >= idx_low and num_layers <= idx_high:
                 reshaped_params = backbone_params.reshape(backbone_params.shape[1], -1)
-                _, singular_values, _ = np.linalg.svd(reshaped_params, False)
+                _, singular_values, _ = np.linalg.svd(reshaped_params.astype(np.float32), False)
                 squared_singular_values = singular_values**2
                 top_five_sq_sv = squared_singular_values#[:5]
                 #features += squared_singular_values.tolist()
@@ -182,10 +201,10 @@ def _get_eigen_vals(all_backbone_params, idx_low=0, idx_high=3):
                 # num_layers += 1
             num_layers += 1
         if len(backbone_params.shape) == 2:
-            #if num_layers >= idx_low and num_layers <= idx_high:
-            if True:
+            if num_layers >= idx_low and num_layers <= idx_high:
+            #if True:
                 reshaped_params = backbone_params.reshape(backbone_params.shape[1], -1)
-                _, singular_values, _ = np.linalg.svd(reshaped_params, False)
+                _, singular_values, _ = np.linalg.svd(reshaped_params.astype(np.float32), False)
                 squared_singular_values = singular_values**2
                 top_five_sq_sv = squared_singular_values#[:5]
                 #features += squared_singular_values.tolist()
@@ -225,18 +244,6 @@ def get_model_path_list(models_dir_list):
     return models_path_list
 
 
-def check_model_arch(models_path_list):
-    model_classes = []
-    models = []
-    for model_dir in models_path_list:
-        model, model_repr, model_class = load_model(os.path.join(model_dir, "model.pt"))
-        model_class = model._get_name()
-        # model_backbone = model
-        model_classes.append(model_class)
-        models.append(model)
-    return models, model_classes
-
-
 if __name__ == "__main__":
     np.random.seed(0)
     # parser = (add_args(argparse.ArgumentParser(description=sys.argv[0])))
@@ -246,7 +253,7 @@ if __name__ == "__main__":
     args['high_layer_A'] = 0
     args['low_layer_B'] = 0
     args['high_layer_B'] = 0
-    args['num_eigen_values'] = 100
+    args['num_eigen_values'] = 20
     args['general'] = False
 
     models_dir_list = ["/scr2/lu/TrojAI23/rl-lavaworld-jul2023/training/models",
@@ -259,28 +266,14 @@ if __name__ == "__main__":
     models_dir_list = ["/scr2/lu/TrojAI23/cyber-apk-nov2023-train/models",
                        "/scr2/lu/TrojAI23/cyber-apk-nov2023-train-rev2/models",]
     models_dir_list = ["/scr2/lu/TrojAI23/cyber-network-c2-mar2024-train-rev2/rev2/models",]
+    models_dir_list = ["/data2/lu/data/nist/cyber-pdf-dec2022-train/models",
+                       "/data2/lu/data/nist/llm-pretrain-apr2024-train/rev1/models", ]
+    models_dir_list = ["/data2/lu/data/nist/llm-pretrain-apr2024-train-rev2/models",
+                       "/data2/lu/data/nist/llm-pretrain-apr2024-train/rev1/models", ]
+    models_dir_list = ["/data2/lu/data/nist/llm-pretrain-apr2024-train/rev1/models",
+                       "/data2/lu/data/nist/llm-pretrain-apr2024-train-rev2/models", ]
+    models_dir_list = ["/data2/lu/data/nist/llm-instruct-oct2024-train", ]
     models_path_list = sorted(get_model_path_list(models_dir_list))
-    # model_repr_dict, model_ground_truth_dict = load_models_dirpath(models_path_list)
-    #
-    # models_padding_dict = create_models_padding(model_repr_dict)
-    #
-    # for model_class, model_repr_list in model_repr_dict.items():
-    #     for index, model_repr in enumerate(model_repr_list):
-    #         model_repr_dict[model_class][index] = pad_model(model_repr, model_class, models_padding_dict)
-    #
-    # check_models_consistency(model_repr_dict)
-
-    # # Build model layer map to know how to flatten
-    # # logging.info("Generating model layer map...")
-    # model_layer_map = create_layer_map(model_repr_dict)
-    #
-    # # Flatten models
-    # flat_models = flatten_models(model_repr_dict, model_layer_map)
-    # del model_repr_dict
-    # # logging.info("Models flattened. Fitting feature reduction...")
-    #
-    # layer_transform = fit_feature_reduction_algorithm(flat_models, self.weight_table_params, input_features)
-
 
     if args['general']:
         all_features_and_labels = get_features_and_labels(args, models_path_list)
@@ -290,8 +283,8 @@ if __name__ == "__main__":
     model_A_features, model_A_labels = all_features_and_labels['model_A_features'], all_features_and_labels['model_A_labels']
     np.save('features_A', model_A_features)
     np.save('labels_A', model_A_labels)
-
-
+    model_A_features = np.tile(model_A_features, (2, 1))
+    model_A_labels = np.tile(model_A_labels, 2)
     base_clf = RandomForestClassifier(n_estimators=2000, max_depth=2, criterion='log_loss', bootstrap=True,
                                       random_state=0)
     clf_A, clf_B, clf_C = CalibratedClassifierCV(base_estimator=base_clf, cv=5), CalibratedClassifierCV(
@@ -303,6 +296,8 @@ if __name__ == "__main__":
         model_B_features, model_B_labels = all_features_and_labels['model_B_features'], all_features_and_labels['model_B_labels']
         np.save('features_B', model_B_features)
         np.save('labels_B', model_B_labels)
+        model_B_features = np.tile(model_B_features, (2, 1))
+        model_B_labels = np.tile(model_B_labels, 2)
         clf_B.fit(model_B_features, model_B_labels)
         dump(clf_B, 'classifier_model_B.joblib')
 

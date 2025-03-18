@@ -4,14 +4,4 @@ python entrypoint.py configure --automatic_configuration --scratch_dirpath=./scr
 python entrypoint.py infer
 
 
-singularity build --fakeroot cyber-apk-nov2023_sts_v0.simg detector.def
-
-
-singularity build --fakeroot cyber-apk-nov2023_sts_v0.simg trojan_detector.def
-
-
-
-
-
-
-
+singularity build --fakeroot cyber-pe-aug2024_sts_v0.simg detector.def

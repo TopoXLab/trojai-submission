@@ -247,10 +247,10 @@ def predict(ensemble,fvs):
 if __name__ == "__main__":
     fix_random(1003)
     import os
-    default_params=smartparse.obj();
-    default_params.out='data_r12_trinity_v0'
-    params=smartparse.parse(default_params);
-    params.argv=sys.argv;
+    default_params = smartparse.obj();
+    default_params.out = 'data_r12_trinity_v0'
+    params = smartparse.parse(default_params);
+    params.argv = sys.argv;
     
-    extract_dataset(os.path.join(helper.root(),'models'),ts_engine,params);
+    extract_dataset(os.path.join(helper.root(), 'models'), ts_engine, params);
     
